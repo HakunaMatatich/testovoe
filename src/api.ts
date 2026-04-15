@@ -54,7 +54,7 @@ interface AreaResponse {
   };
 }
 
-const API_BASE = '/backend/api/v4/test';
+const API_BASE = 'https://showroom.eis24.me/c300/api/v4/test';
 
 const normalizeString = (value: unknown): string => {
   if (typeof value === 'string') {
@@ -142,7 +142,7 @@ const normalizeMeter = (raw: unknown): MeterItem => {
     type: normalizeMeterType(item.type || item._type || item.meter_type),
     areaId,
     installationDate: normalizeString(
-      item.installation_date || item.install_date || item.created_at,
+      item.installation_date || item.install_date || item.created_at
     ),
     isAutomatic:
       typeof item.is_automatic === 'boolean' ? item.is_automatic : null,
@@ -317,18 +317,24 @@ const pickTotal = (payload: unknown): number | null => {
 export const fetchMeters = async (
   limit: number,
   offset: number,
+  signal?: AbortSignal
 ): Promise<{ items: MeterItem[]; total: number | null }> => {
   const url = `${API_BASE}/meters/?limit=${limit}&offset=${offset}`;
-  const payload = await requestJson<MeterResponse | unknown[]>(url);
+  const payload = await requestJson<MeterResponse | unknown[]>(url, { signal });
   const itemsRaw = pickArray(payload);
 
-  const items = itemsRaw.map(normalizeMeter).filter((item) => item.id.length > 0);
+  const items = itemsRaw
+    .map(normalizeMeter)
+    .filter((item) => item.id.length > 0);
   const total = pickTotal(payload);
 
   return { items, total: total ?? null };
 };
 
-export const fetchAreasByIds = async (ids: string[]): Promise<AreaItem[]> => {
+export const fetchAreasByIds = async (
+  ids: string[],
+  signal?: AbortSignal
+): Promise<AreaItem[]> => {
   if (ids.length === 0) {
     return [];
   }
@@ -339,8 +345,9 @@ export const fetchAreasByIds = async (ids: string[]): Promise<AreaItem[]> => {
     uniqueIds.map((id) =>
       requestJson<AreaResponse | unknown[]>(
         `${API_BASE}/areas/?id__in=${encodeURIComponent(id)}`,
-      ),
-    ),
+        { signal }
+      )
+    )
   );
 
   const areaMap = new Map<string, AreaItem>();

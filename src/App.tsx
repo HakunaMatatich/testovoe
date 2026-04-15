@@ -1,11 +1,14 @@
 ﻿import { useEffect, useState } from 'react';
-import { autorun } from 'mobx';
+import { reaction } from 'mobx';
 import './App.css';
 import { createRootStore } from './store';
 
 type PageToken = number | 'ellipsis';
 
-const typeView: Record<string, { label: string; tone: 'hot' | 'cold' | 'neutral' }> = {
+const typeView: Record<
+  string,
+  { label: string; tone: 'hot' | 'cold' | 'neutral' }
+> = {
   HotWaterAreaMeter: { label: 'ГВС', tone: 'hot' },
   ColdWaterAreaMeter: { label: 'ХВС', tone: 'cold' },
 };
@@ -45,16 +48,20 @@ function App() {
   const [, forceRender] = useState(0);
 
   useEffect(() => {
-    const disposer = autorun(() => {
-      store.meters.length;
-      store.addresses.size;
-      store.offset;
-      store.total;
-      store.isLoading;
-      store.error;
-      store.deletingIds.length;
-      forceRender((value) => value + 1);
-    });
+    const disposer = reaction(
+      () => [
+        store.meters.length,
+        store.addresses.size,
+        store.offset,
+        store.total,
+        store.isLoading,
+        store.error,
+        store.deletingIds.length,
+      ],
+      () => {
+        forceRender((value) => value + 1);
+      }
+    );
 
     return () => {
       disposer();
@@ -80,7 +87,9 @@ function App() {
       <section className="panel">
         <h1>Список счётчиков</h1>
 
-        {store.error ? <div className="error">Ошибка: {store.error}</div> : null}
+        {store.error ? (
+          <div className="error">Ошибка: {store.error}</div>
+        ) : null}
 
         <div className="tableWrap" aria-busy={store.isLoading}>
           <table>
@@ -98,7 +107,9 @@ function App() {
             </thead>
             <tbody>
               {store.meters.map((meter, index) => {
-                const area = meter.areaId ? store.addresses.get(meter.areaId) : null;
+                const area = meter.areaId
+                  ? store.addresses.get(meter.areaId)
+                  : null;
                 const address = area
                   ? area.fullAddress || '—'
                   : meter.areaId
@@ -110,7 +121,7 @@ function App() {
                 };
 
                 return (
-                  <tr key={`${meter.id}-${index}`}>
+                  <tr key={meter.id}>
                     <td>{store.offset + index + 1}</td>
                     <td>
                       <span className={`typeCell type-${meterType.tone}`}>
@@ -119,7 +130,13 @@ function App() {
                       </span>
                     </td>
                     <td>{formatDate(meter.installationDate)}</td>
-                    <td>{meter.isAutomatic === null ? '—' : meter.isAutomatic ? 'да' : 'нет'}</td>
+                    <td>
+                      {meter.isAutomatic === null
+                        ? '—'
+                        : meter.isAutomatic
+                          ? 'да'
+                          : 'нет'}
+                    </td>
                     <td>{meter.initialValues || '—'}</td>
                     <td>{address}</td>
                     <td>{meter.description || '—'}</td>
@@ -149,7 +166,11 @@ function App() {
         <nav className="pagination" aria-label="Пагинация счётчиков">
           {pageTokens.map((token, index) =>
             token === 'ellipsis' ? (
-              <span key={`ellipsis-${index}`} className="pageDots" aria-hidden="true">
+              <span
+                key={`ellipsis-${index}`}
+                className="pageDots"
+                aria-hidden="true"
+              >
                 ...
               </span>
             ) : (
@@ -157,12 +178,14 @@ function App() {
                 key={token}
                 type="button"
                 onClick={() => onOpenPage(token)}
-                className={token === currentPage ? 'pageButton isActive' : 'pageButton'}
+                className={
+                  token === currentPage ? 'pageButton isActive' : 'pageButton'
+                }
                 disabled={store.isLoading || token === currentPage}
               >
                 {token}
               </button>
-            ),
+            )
           )}
         </nav>
       </section>

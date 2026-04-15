@@ -1,4 +1,4 @@
-﻿import { flow, types } from 'mobx-state-tree';
+﻿import { applySnapshot, flow, types } from 'mobx-state-tree';
 import type { Instance, SnapshotIn } from 'mobx-state-tree';
 import { deleteMeterRequest, fetchAreasByIds, fetchMeters } from './api';
 import type { AreaItem, MeterItem } from './api';
@@ -37,7 +37,9 @@ const AreaModel = types
     },
   }));
 
-const normalizeMeterSnapshot = (item: MeterItem): SnapshotIn<typeof MeterModel> => ({
+const normalizeMeterSnapshot = (
+  item: MeterItem
+): SnapshotIn<typeof MeterModel> => ({
   id: item.id,
   type: item.type,
   areaId: item.areaId ?? null,
@@ -47,7 +49,9 @@ const normalizeMeterSnapshot = (item: MeterItem): SnapshotIn<typeof MeterModel> 
   description: item.description,
 });
 
-const normalizeAreaSnapshot = (item: AreaItem): SnapshotIn<typeof AreaModel> => ({
+const normalizeAreaSnapshot = (
+  item: AreaItem
+): SnapshotIn<typeof AreaModel> => ({
   id: item.id,
   street: item.street,
   house: item.house,
@@ -79,11 +83,20 @@ export const RootStore = types
     },
   }))
   .actions((self) => {
+    let fetchVersion = 0;
+    let currentFetchController: AbortController | null = null;
+
     const setError = (value: string) => {
       self.error = value;
     };
 
-    const loadAddresses = flow(function* loadAddresses() {
+    const isAbortError = (error: unknown): boolean =>
+      error instanceof DOMException && error.name === 'AbortError';
+
+    const loadAddresses = flow(function* loadAddresses(
+      version: number,
+      signal?: AbortSignal
+    ) {
       const unknownAreaIds = self.meters
         .map((meter) => meter.areaId)
         .filter((areaId): areaId is string => areaId !== null)
@@ -94,7 +107,11 @@ export const RootStore = types
         return;
       }
 
-      const areas: AreaItem[] = yield fetchAreasByIds(unknownAreaIds);
+      const areas: AreaItem[] = yield fetchAreasByIds(unknownAreaIds, signal);
+
+      if (version !== fetchVersion) {
+        return;
+      }
 
       areas.forEach((area) => {
         self.addresses.set(area.id, normalizeAreaSnapshot(area));
@@ -102,19 +119,40 @@ export const RootStore = types
     });
 
     const fetchPage = flow(function* fetchPage(offset = self.offset) {
+      const version = ++fetchVersion;
+      currentFetchController?.abort();
+      currentFetchController = new AbortController();
+      const { signal } = currentFetchController;
+
       self.isLoading = true;
       setError('');
 
       try {
         const response: { items: MeterItem[]; total: number | null } =
-          yield fetchMeters(self.limit, offset);
+          yield fetchMeters(self.limit, offset, signal);
+
+        if (version !== fetchVersion) {
+          return;
+        }
 
         self.offset = offset;
         self.total = response.total;
-        self.meters.replace(response.items.map((item) => normalizeMeterSnapshot(item)) as any);
 
-        yield loadAddresses();
+        applySnapshot(
+          self.meters,
+          response.items.map((item) => normalizeMeterSnapshot(item))
+        );
+
+        yield loadAddresses(version, signal);
       } catch (error) {
+        if (version !== fetchVersion) {
+          return;
+        }
+
+        if (isAbortError(error)) {
+          return;
+        }
+
         const message =
           error instanceof Error
             ? error.message
@@ -122,7 +160,10 @@ export const RootStore = types
 
         setError(message);
       } finally {
-        self.isLoading = false;
+        if (version === fetchVersion) {
+          currentFetchController = null;
+          self.isLoading = false;
+        }
       }
     });
 
@@ -137,15 +178,31 @@ export const RootStore = types
       try {
         yield deleteMeterRequest(meterId);
         yield fetchPage(self.offset);
+
+        // Keep page filled with 20 rows when there are enough records.
+        // If we are on the tail page after delete and it has < limit rows,
+        // move to the nearest previous full page.
+        if (
+          typeof self.total === 'number' &&
+          self.total >= self.limit &&
+          self.meters.length < self.limit
+        ) {
+          const previousFullOffset =
+            Math.floor((self.total - self.limit) / self.limit) * self.limit;
+
+          if (self.offset !== previousFullOffset) {
+            yield fetchPage(previousFullOffset);
+          }
+        }
       } catch (error) {
         const message =
-          error instanceof Error
-            ? error.message
-            : 'Не удалось удалить счётчик';
+          error instanceof Error ? error.message : 'Не удалось удалить счётчик';
 
         setError(message);
       } finally {
-        self.deletingIds.replace(self.deletingIds.filter((id) => id !== meterId));
+        self.deletingIds.replace(
+          self.deletingIds.filter((id) => id !== meterId)
+        );
       }
     });
 

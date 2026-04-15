@@ -1,75 +1,79 @@
-# React + TypeScript + Vite
+﻿# Water Meters List (React + TypeScript + MST)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Тестовое приложение для отображения списка счётчиков горячей и холодной воды.
 
-Currently, two official plugins are available:
+## Стек
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19
+- TypeScript
+- mobx-state-tree
+- Vite
 
-## React Compiler
+## Быстрый старт
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Приложение откроется на `http://localhost:5173`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x';
-import reactDom from 'eslint-plugin-react-dom';
+## Скрипты
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
+- `npm run dev` — запуск в режиме разработки
+- `npm run lint` — проверка ESLint
+- `npx tsc -b` — проверка типов TypeScript
+- `npm run check` — lint + typecheck
+- `npm run format` — форматирование Prettier
+- `npm run build` — прод-сборка
+
+## Архитектура
+
+### Слои
+
+- `src/api.ts`
+  - HTTP-запросы (`GET meters`, `GET areas`, `DELETE meter`)
+  - нормализация нестабильного формата API
+  - безопасная обработка разных ключей ответа (`results`, `data`, `items`, ...)
+- `src/store.ts`
+  - MST-модели и корневой стор
+  - загрузка страниц (`limit=20`, `offset`)
+  - кэш адресов (не запрашиваем уже известные `areaId`)
+  - удаление счётчика с повторной загрузкой текущей страницы
+- `src/App.tsx`
+  - UI таблицы
+  - внутренний скролл
+  - пагинация
+  - hover-кнопка удаления
+
+### Поток данных
+
+1. `store.fetchPage(offset)` вызывает `fetchMeters(limit, offset)`.
+2. Результат нормализуется и попадает в `store.meters`.
+3. Для неизвестных `areaId` вызывается `fetchAreasByIds(...)` параллельно.
+4. Адреса сохраняются в `store.addresses` (map-кэш).
+5. UI реагирует на изменения стора и перерисовывает таблицу.
+
+## Принятые решения
+
+- `id` и `area.id` в API строковые (`ObjectId`) — вся модель хранит их как `string`.
+- Адрес нормализуется из нескольких источников, в том числе:
+  - `house.address`
+  - `str_number_full` / `str_number` / `number`
+- Для защиты от гонок запросов в сторе используется:
+  - `AbortController` (отмена старого запроса)
+  - `fetchVersion` (игнор устаревших ответов)
+- API-base задан как `https://showroom.eis24.me/c300/api/v4/test`.
+
+## Качество и стабильность
+
+- Линтер и типизация должны проходить перед сдачей.
+- Проверка безопасности зависимостей:
+  - `npm audit` (на момент последней проверки — без уязвимостей).
+- Из проекта удалены лишние dev-зависимости от старой babel-конфигурации.
+
+## Ручная проверка
+
+Используйте подробный чек-лист:
+
+- [SMOKE_CHECKLIST.md](./SMOKE_CHECKLIST.md)
