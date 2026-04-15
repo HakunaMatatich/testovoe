@@ -1,14 +1,10 @@
 ﻿import { flow, types } from 'mobx-state-tree';
 import type { Instance, SnapshotIn } from 'mobx-state-tree';
-import {
-  deleteMeterRequest,
-  fetchAreasByIds,
-  fetchMeters,
-} from './api';
+import { deleteMeterRequest, fetchAreasByIds, fetchMeters } from './api';
 import type { AreaItem, MeterItem } from './api';
 
 const MeterModel = types.model('MeterModel', {
-  id: types.identifier,
+  id: types.string,
   type: types.string,
   areaId: types.maybeNull(types.string),
   installationDate: types.string,
@@ -19,13 +15,22 @@ const MeterModel = types.model('MeterModel', {
 
 const AreaModel = types
   .model('AreaModel', {
-    id: types.identifier,
+    id: types.string,
     street: types.string,
     house: types.string,
     flat: types.string,
+    rawFullAddress: types.string,
   })
   .views((self) => ({
     get fullAddress(): string {
+      if (self.street && !self.house && !self.flat) {
+        return self.street;
+      }
+
+      if (!self.street && !self.house && !self.flat && self.rawFullAddress) {
+        return self.rawFullAddress;
+      }
+
       return [self.street, self.house, self.flat ? `кв. ${self.flat}` : '']
         .filter(Boolean)
         .join(', ');
@@ -47,6 +52,7 @@ const normalizeAreaSnapshot = (item: AreaItem): SnapshotIn<typeof AreaModel> => 
   street: item.street,
   house: item.house,
   flat: item.flat,
+  rawFullAddress: item.fullAddress,
 });
 
 export const RootStore = types
@@ -105,7 +111,8 @@ export const RootStore = types
 
         self.offset = offset;
         self.total = response.total;
-        self.meters.replace(response.items.map((item) => MeterModel.create(normalizeMeterSnapshot(item))));
+        self.meters.replace(response.items.map((item) => normalizeMeterSnapshot(item)) as any);
+
         yield loadAddresses();
       } catch (error) {
         const message =

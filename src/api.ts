@@ -15,6 +15,7 @@ export interface AreaItem {
   street: string;
   house: string;
   flat: string;
+  fullAddress: string;
 }
 
 interface MeterResponse {
@@ -67,6 +68,36 @@ const normalizeString = (value: unknown): string => {
   return '';
 };
 
+const getByPath = (source: unknown, path: string): unknown => {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  const parts = path.split('.');
+  let current: unknown = source;
+
+  for (const part of parts) {
+    if (!current || typeof current !== 'object') {
+      return undefined;
+    }
+
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
+};
+
+const pickFirstString = (source: unknown, paths: string[]): string => {
+  for (const path of paths) {
+    const value = normalizeString(getByPath(source, path));
+    if (value) {
+      return value;
+    }
+  }
+
+  return '';
+};
+
 const normalizeInitialValues = (value: unknown): string => {
   if (Array.isArray(value)) {
     return value
@@ -100,11 +131,16 @@ const normalizeMeterType = (value: unknown): string => {
 const normalizeMeter = (raw: unknown): MeterItem => {
   const item = raw as Record<string, unknown>;
   const area = item.area as Record<string, unknown> | undefined;
+  const areaId =
+    normalizeString(item.area_id) ||
+    normalizeString(area?.id) ||
+    (typeof item.area === 'string' ? normalizeString(item.area) : '') ||
+    null;
 
   return {
     id: normalizeString(item.id),
     type: normalizeMeterType(item.type || item._type || item.meter_type),
-    areaId: normalizeString(item.area_id || item.area || area?.id) || null,
+    areaId,
     installationDate: normalizeString(
       item.installation_date || item.install_date || item.created_at,
     ),
@@ -123,11 +159,79 @@ const normalizeArea = (raw: unknown): AreaItem | null => {
     return null;
   }
 
+  const street = pickFirstString(item, [
+    'street',
+    'street_name',
+    'street_title',
+    'street.full_name',
+    'street.title',
+    'street.name',
+    'address.street',
+    'address.street_name',
+    'city_with_type',
+  ]);
+
+  const house = pickFirstString(item, [
+    'house',
+    'house_number',
+    'house_num',
+    'building',
+    'building_number',
+    'home',
+    'dom',
+    'address.house',
+    'address.house_number',
+    'address.building',
+    'house_data.number',
+    'house_data.house_number',
+  ]);
+
+  const flat = pickFirstString(item, [
+    'str_number_full',
+    'str_number',
+    'number',
+    'flat',
+    'flat_number',
+    'apartment',
+    'apartment_number',
+    'room',
+    'premise_number',
+    'address.flat',
+    'address.flat_number',
+  ]);
+
+  const fullAddress = pickFirstString(item, [
+    'house.address',
+    'full_address',
+    'address',
+    'short_address',
+    'formatted_address',
+    'address_text',
+    'address.full',
+    'fias.full_address',
+  ]);
+
+  const composedAddress = [fullAddress, flat]
+    .filter((part, index) => {
+      if (!part) {
+        return false;
+      }
+
+      // avoid duplicate flat part when full address already contains it
+      if (index === 1 && fullAddress.includes(part)) {
+        return false;
+      }
+
+      return true;
+    })
+    .join(', ');
+
   return {
     id,
-    street: normalizeString(item.street || item.street_name),
-    house: normalizeString(item.house || item.house_number),
-    flat: normalizeString(item.flat || item.flat_number || item.apartment),
+    street,
+    house,
+    flat,
+    fullAddress: composedAddress || fullAddress,
   };
 };
 
@@ -230,14 +334,27 @@ export const fetchAreasByIds = async (ids: string[]): Promise<AreaItem[]> => {
   }
 
   const uniqueIds = [...new Set(ids)];
-  const idList = uniqueIds.join(',');
-  const url = `${API_BASE}/areas/?id__in=${encodeURIComponent(idList)}`;
-  const payload = await requestJson<AreaResponse | unknown[]>(url);
-  const itemsRaw = pickArray(payload);
 
-  return itemsRaw
-    .map(normalizeArea)
-    .filter((item): item is AreaItem => item !== null);
+  const responses = await Promise.all(
+    uniqueIds.map((id) =>
+      requestJson<AreaResponse | unknown[]>(
+        `${API_BASE}/areas/?id__in=${encodeURIComponent(id)}`,
+      ),
+    ),
+  );
+
+  const areaMap = new Map<string, AreaItem>();
+
+  responses.forEach((payload) => {
+    pickArray(payload)
+      .map(normalizeArea)
+      .filter((item): item is AreaItem => item !== null)
+      .forEach((area) => {
+        areaMap.set(area.id, area);
+      });
+  });
+
+  return [...areaMap.values()];
 };
 
 export const deleteMeterRequest = async (meterId: string): Promise<void> => {

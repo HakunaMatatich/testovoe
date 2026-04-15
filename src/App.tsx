@@ -1,5 +1,5 @@
-﻿import { useEffect, useMemo, useState } from 'react';
-import { onSnapshot } from 'mobx-state-tree';
+﻿import { useEffect, useState } from 'react';
+import { autorun } from 'mobx';
 import './App.css';
 import { createRootStore } from './store';
 
@@ -41,11 +41,18 @@ const buildPageTokens = (current: number, total: number): PageToken[] => {
 };
 
 function App() {
-  const store = useMemo(() => createRootStore(), []);
+  const [store] = useState(() => createRootStore());
   const [, forceRender] = useState(0);
 
   useEffect(() => {
-    const disposer = onSnapshot(store, () => {
+    const disposer = autorun(() => {
+      store.meters.length;
+      store.addresses.size;
+      store.offset;
+      store.total;
+      store.isLoading;
+      store.error;
+      store.deletingIds.length;
       forceRender((value) => value + 1);
     });
 
@@ -59,7 +66,9 @@ function App() {
   }, [store]);
 
   const currentPage = Math.floor(store.offset / store.limit) + 1;
-  const totalPages = store.total ? Math.max(1, Math.ceil(store.total / store.limit)) : currentPage;
+  const totalPages = store.total
+    ? Math.max(1, Math.ceil(store.total / store.limit))
+    : currentPage;
   const pageTokens = buildPageTokens(currentPage, totalPages);
 
   const onOpenPage = (page: number) => {
@@ -89,33 +98,28 @@ function App() {
             </thead>
             <tbody>
               {store.meters.map((meter, index) => {
-                const area = meter.areaId ? store.addresses.get(String(meter.areaId)) : null;
-                const address = area ? area.fullAddress || '—' : meter.areaId ? 'Загрузка...' : '—';
+                const area = meter.areaId ? store.addresses.get(meter.areaId) : null;
+                const address = area
+                  ? area.fullAddress || '—'
+                  : meter.areaId
+                    ? 'Загрузка...'
+                    : '—';
                 const meterType = typeView[meter.type] ?? {
                   label: meter.type || '—',
-                  icon: 'dot',
                   tone: 'neutral' as const,
                 };
 
                 return (
-                  <tr key={meter.id}>
+                  <tr key={`${meter.id}-${index}`}>
                     <td>{store.offset + index + 1}</td>
                     <td>
                       <span className={`typeCell type-${meterType.tone}`}>
-                        <span className="typeIcon" aria-hidden="true">
-                          
-                        </span>
+                        <span className="typeIcon" aria-hidden="true"></span>
                         {meterType.label}
                       </span>
                     </td>
                     <td>{formatDate(meter.installationDate)}</td>
-                    <td>
-                      {meter.isAutomatic === null
-                        ? '—'
-                        : meter.isAutomatic
-                          ? 'да'
-                          : 'нет'}
-                    </td>
+                    <td>{meter.isAutomatic === null ? '—' : meter.isAutomatic ? 'да' : 'нет'}</td>
                     <td>{meter.initialValues || '—'}</td>
                     <td>{address}</td>
                     <td>{meter.description || '—'}</td>
