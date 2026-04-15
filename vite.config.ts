@@ -8,4 +8,13 @@ export default defineConfig({
     react(),
     babel({ presets: [reactCompilerPreset()] })
   ],
+  server: {
+    proxy: {
+      '/backend': {
+        target: 'http://showroom.eis24.me',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/backend/, '/c300'),
+      },
+    },
+  },
 })
