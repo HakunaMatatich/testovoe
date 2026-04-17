@@ -1,9 +1,32 @@
-﻿import { formatDate, typeView } from '../app';
+﻿import { formatDate, typeView, type MeterTypeView } from '../app';
 import type { RootStoreInstance } from '../store';
 
 interface MetersTableProps {
   store: RootStoreInstance;
 }
+
+const resolveAddress = (
+  areaId: string | null,
+  addresses: RootStoreInstance['addresses']
+): string => {
+  if (!areaId) {
+    return '—';
+  }
+
+  const area = addresses.get(areaId);
+
+  if (!area) {
+    return 'Загрузка...';
+  }
+
+  return area.fullAddress || '—';
+};
+
+const resolveMeterType = (type: string): MeterTypeView =>
+  typeView[type] ?? {
+    label: type || '—',
+    tone: 'neutral',
+  };
 
 export const MetersTable = ({ store }: MetersTableProps) => {
   return (
@@ -23,18 +46,8 @@ export const MetersTable = ({ store }: MetersTableProps) => {
         </thead>
         <tbody>
           {store.meters.map((meter, index) => {
-            const area = meter.areaId
-              ? store.addresses.get(meter.areaId)
-              : null;
-            const address = area
-              ? area.fullAddress || '—'
-              : meter.areaId
-                ? 'Загрузка...'
-                : '—';
-            const meterType = typeView[meter.type] ?? {
-              label: meter.type || '—',
-              tone: 'neutral' as const,
-            };
+            const address = resolveAddress(meter.areaId, store.addresses);
+            const meterType = resolveMeterType(meter.type);
 
             return (
               <tr key={meter.id}>
